@@ -1,0 +1,139 @@
+        </div>
+      </div>`).join('') : `<div class="card"><p style="text-align:center;color:var(--ink-mute);padding:20px;">Hakuna maombi mapya ya usajili</p></div>`;
+  }
+  window.__drawApprovals = draw;
+}
+function approveRequest(id){
+  const list = get(LS.pending,[]);
+  const idx = list.findIndex(p=>p.id===id);
+  if(idx<0) return;
+  const p = list[idx];
+  const members = get(LS.members,[]);
+  let max=0; members.forEach(m=>{ const n=parseInt(m.regNo.split('-')[1]); if(n>max) max=n; });
+  const regNo = 'TCB-'+String(max+1).padStart(4,'0');
+  const newId = 'm'+Date.now();
+  members.push({id:newId, regNo, name:p.name, phone:p.phone, email:p.email||'', programme:p.programme||'', year:p.year||'Mwaka 1', status:'Active', joined: todayISO()});
+  set(LS.members, members);
+  const users = get(LS.users,[]);
+  users.push({id:'u'+Date.now(), username:regNo, password:'member123', role:'Member', leaderPosition:'', memberId:newId, photo:'', securityQ:DEFAULT_SECRET_Q, securityA:DEFAULT_SECRET_A, status:'Active'});
+  set(LS.users, users);
+  list[idx].status = 'Approved';
+  set(LS.pending, list);
+  toast(`Ombi limeidhinishwa. Akaunti: ${regNo} / member123`);
+  if(window.__drawApprovals) window.__drawApprovals();
+}
+function rejectRequest(id){
+  const list = get(LS.pending,[]);
+  const idx = list.findIndex(p=>p.id===id);
+  if(idx>-1){ list[idx].status='Rejected'; set(LS.pending, list); toast('Ombi limekataliwa'); }
+  if(window.__drawApprovals) window.__drawApprovals();
+}
+
+/* ===================== POSTER GENERATOR ===================== */
+let posterSize = {w:1080, h:1080};
+function wrapLines(ctx, text, maxWidth){
+  const words = (text||'').split(/\s+/).filter(Boolean);
+  const lines = []; let line = '';
+  words.forEach(word=>{
+    const test = line ? line+' '+word : word;
+    if(ctx.measureText(test).width > maxWidth && line){ lines.push(line); line = word; }
+    else line = test;
+  });
+  if(line) lines.push(line);
+  return lines;
+}
+function drawPoster(){
+  const canvas = document.getElementById('posterCanvas');
+  canvas.width = posterSize.w; canvas.height = posterSize.h;
+  const ctx = canvas.getContext('2d');
+  const w = posterSize.w, h = posterSize.h;
+  const s = getSettings();
+  const title = document.getElementById('pstTitle').value.trim() || 'Tangazo la TUCASA CBE';
+  const body = document.getElementById('pstBody').value.trim() || 'Karibu kwenye tukio letu. Tunakukaribisha wewe na wenzako.';
+
+  // background gradient
+  const grad = ctx.createLinearGradient(0,0,w,h);
+  grad.addColorStop(0,'#F5B400'); grad.addColorStop(0.55,'#D69A00'); grad.addColorStop(1,'#2f5fd1');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,w,h);
+
+  // decorative translucent circles (glass accents)
+  ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(w*0.85, h*0.08, w*0.28, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(w*0.05, h*0.92, w*0.22, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // top bar: logo + org name
+  const pad = w*0.07;
+  if(logoImg.complete && logoImg.naturalWidth){
+    try{ ctx.drawImage(logoImg, pad, pad, w*0.09, w*0.09); }catch(e){}
+  }
+  ctx.fillStyle = '#231a00'; ctx.font = '700 '+(w*0.032)+'px Poppins, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(s.orgName, pad + w*0.12, pad + w*0.045);
+
+  // glass card for text
+  const cardX = pad, cardY = h*0.32, cardW = w - pad*2, cardH = h*0.42;
+  ctx.save();
+  ctx.globalAlpha = 0.86;
+  roundRectPath(ctx, cardX, cardY, cardW, cardH, w*0.035);
+  ctx.fillStyle = '#ffffff'; ctx.fill();
+  ctx.restore();
+
+  // title
+  ctx.fillStyle = '#231a00'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = '800 '+(w*0.062)+'px Poppins, sans-serif';
+  const titleLines = wrapLines(ctx, title, cardW - w*0.08);
+  let ty = cardY + w*0.09;
+  titleLines.slice(0,3).forEach(line=>{ ctx.fillText(line, cardX + w*0.04, ty); ty += w*0.072; });
+
+  // body
+  ctx.font = '500 '+(w*0.028)+'px Inter, sans-serif';
+  ctx.fillStyle = '#4d4e49';
+  const bodyLines = wrapLines(ctx, body, cardW - w*0.08);
+  ty += w*0.015;
+  bodyLines.slice(0,6).forEach(line=>{ ty += w*0.04; ctx.fillText(line, cardX + w*0.04, ty); });
+
+  // footer bar
+  ctx.fillStyle = 'rgba(35,26,0,0.9)';
+  ctx.fillRect(0, h-h*0.09, w, h*0.09);
+  ctx.fillStyle = '#F5B400'; ctx.font = '700 '+(w*0.026)+'px Inter, sans-serif'; ctx.textBaseline='middle';
+  ctx.fillText('📅 ' + fmtDateSw(todayISO()) + '   ·   ' + (s.contact||''), pad, h - h*0.045);
+}
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function openPoster(title, body){
+  document.getElementById('pstTitle').value = title || '';
+  document.getElementById('pstBody').value = body || '';
+  posterSize = {w:1080,h:1080};
+  document.getElementById('pstSizeSquare').className = 'btn btn-gold btn-sm';
+  document.getElementById('pstSizePortrait').className = 'btn btn-ghost btn-sm';
+  openModal('posterModal');
+  setTimeout(drawPoster, 30);
+}
+document.getElementById('pstTitle').addEventListener('input', drawPoster);
+document.getElementById('pstBody').addEventListener('input', drawPoster);
+document.getElementById('pstSizeSquare').addEventListener('click', ()=>{
+  posterSize = {w:1080,h:1080};
+  document.getElementById('pstSizeSquare').className = 'btn btn-gold btn-sm';
+  document.getElementById('pstSizePortrait').className = 'btn btn-ghost btn-sm';
+  drawPoster();
+});
+document.getElementById('pstSizePortrait').addEventListener('click', ()=>{
+  posterSize = {w:1080,h:1420};
+  document.getElementById('pstSizePortrait').className = 'btn btn-gold btn-sm';
+  document.getElementById('pstSizeSquare').className = 'btn btn-ghost btn-sm';
+  drawPoster();
+});
+document.getElementById('pstDownloadBtn').addEventListener('click', ()=>{
+  const canvas = document.getElementById('posterCanvas');
+  canvas.toBlob(async (blob)=>{
+    if(!blob){ toast('Imeshindikana kutengeneza picha','err'); return; }
+    await saveFile(`tcbems-poster-${posterSize.w}x${posterSize.h}-${todayISO()}.png`, blob, 'image/png');
+  }, 'image/png');
+});
+</script>
+</body>
+</html>
